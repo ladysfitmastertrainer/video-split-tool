@@ -2,51 +2,57 @@ const express = require("express");
 const ffmpeg = require("fluent-ffmpeg");
 const fs = require("fs");
 const axios = require("axios");
+const multer = require("multer");
+const { exec } = require("child_process");
 
 const app = express();
 app.use(express.json());
 
-app.post("/split", async (req, res) => {
-  const { url, segments } = req.body;
+const upload = multer({ dest: "/tmp/" });
 
-  const inputPath = "/tmp/input.mp4";
+/************ 1. DOWNLOAD YOUTUBE ************/
+app.post("/youtube", async (req, res) => {
+  const { url } = req.body;
 
-  const writer = fs.createWriteStream(inputPath);
-  const response = await axios({
-    url,
-    method: "GET",
-    responseType: "stream"
+  const output = "/tmp/youtube.mp4";
+
+  exec(`yt-dlp -f best -o ${output} ${url}`, (err) => {
+    if (err) return res.send("❌ Lỗi tải video");
+
+    res.send("✅ Đã tải video YouTube (server)");
   });
+});
 
-  response.data.pipe(writer);
+/************ 2. UPLOAD + CUT ************/
+app.post("/upload-split", upload.single("video"), async (req, res) => {
+  const segments = parseInt(req.body.segments);
+  const inputPath = req.file.path;
 
-  writer.on("finish", () => {
-    ffmpeg.ffprobe(inputPath, (err, metadata) => {
-      const duration = metadata.format.duration;
-      const part = duration / segments;
+  ffmpeg.ffprobe(inputPath, (err, metadata) => {
+    const duration = metadata.format.duration;
+    const part = duration / segments;
 
-      let done = 0;
-      let outputs = [];
+    let done = 0;
+    let outputs = [];
 
-      for (let i = 0; i < segments; i++) {
-        const start = i * part;
-        const output = `/tmp/output_${i}.mp4`;
+    for (let i = 0; i < segments; i++) {
+      const start = i * part;
+      const output = `/tmp/out_${i}.mp4`;
 
-        ffmpeg(inputPath)
-          .setStartTime(start)
-          .setDuration(part)
-          .output(output)
-          .on("end", () => {
-            outputs.push(output);
-            done++;
+      ffmpeg(inputPath)
+        .setStartTime(start)
+        .setDuration(part)
+        .output(output)
+        .on("end", () => {
+          outputs.push(output);
+          done++;
 
-            if (done === parseInt(segments)) {
-              res.send("✅ Xong: " + outputs.join("<br>"));
-            }
-          })
-          .run();
-      }
-    });
+          if (done === segments) {
+            res.send("✅ Đã cắt: " + outputs.join(", "));
+          }
+        })
+        .run();
+    }
   });
 });
 
