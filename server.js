@@ -29,9 +29,10 @@ app.post("/split", upload.single("video"), (req, res) => {
       const output = `/tmp/out_${i}.mp4`;
 
       ffmpeg(inputPath)
-        .setStartTime(start)
-        .setDuration(part)
-        .output(output)
+  .setStartTime(start)
+  .setDuration(part)
+  .outputOptions("-c copy") // 👈 QUAN TRỌNG
+  .output(output)
         .on("start", () => {
           console.log("🚀 Đang xử lý đoạn", i);
         })
